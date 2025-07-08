@@ -113,26 +113,37 @@ df_merged['成立以来年化收益率（%）'] = df_merged.apply(calc_annualize
 df_merged['最新累计净值'] = df_merged['最新单位净值']
 
 # ========== 披露日期识别 ==========
-def get_latest_disclosure_dates(df):
-    result = {}
+def assign_nav_disclosure_dates(df: pd.DataFrame) -> pd.Series:
+    """Return a Series with the most recent NAV disclosure date for each row.
+
+    For closed-end funds the date corresponds to the latest scale date where the
+    unit NAV changed.  For open-end funds it is simply the scale calculation
+    date.  The logic assumes ``df`` contains ``产品代码``, ``运作模式``, ``规模计算日期``
+    and ``最新单位净值`` columns.
+    """
+    result = pd.Series(index=df.index, dtype="datetime64[ns]")
     for code, group in df.groupby('产品代码'):
         group_sorted = group.sort_values('规模计算日期')
-        net = group_sorted['最新单位净值'].fillna(method='ffill')
-        changes = net != net.shift(1)
-        changes.iloc[0] = True
-        changed_dates = group_sorted.loc[changes, '规模计算日期']
-        if not changed_dates.empty:
-            result[code] = changed_dates.iloc[-1]
+        is_open = group_sorted['运作模式'].astype(str).str.contains('开放式', na=False)
+        last_nav = None
+        last_date = None
+        dates = []
+        for idx, row in group_sorted.iterrows():
+            if is_open.loc[idx]:
+                last_nav = row['最新单位净值']
+                last_date = row['规模计算日期']
+            else:
+                current_nav = row['最新单位净值']
+                if pd.isna(current_nav):
+                    current_nav = last_nav
+                if last_nav is None or current_nav != last_nav:
+                    last_nav = current_nav
+                    last_date = row['规模计算日期']
+            dates.append(last_date)
+        result.loc[group_sorted.index] = dates
     return result
 
-disclosure_dates = get_latest_disclosure_dates(df_nv_all)
-
-def determine_latest_nav_date(row):
-    if '开放式' in str(row.get('运作模式', '')):
-        return row['规模计算日期']
-    return disclosure_dates.get(row['产品代码'], row['规模计算日期'])
-
-df_merged['最新净值日期'] = df_merged.apply(determine_latest_nav_date, axis=1)
+df_merged['最新净值日期'] = assign_nav_disclosure_dates(df_merged)
 
 # ========== 字段选择与重命名 ==========
 final_columns = [
