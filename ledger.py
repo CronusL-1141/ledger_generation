@@ -65,17 +65,18 @@ for f in nv_files:
     path = os.path.join(root_path, f)
     df_dict = pd.read_excel(path, sheet_name=None, header=2)
     for sheet in df_dict.values():
-        sheet.columns = sheet.columns.str.strip()
-        sheet = sheet.loc[:, ~sheet.columns.duplicated()]
+        sheet = sheet.copy()
+        sheet.columns = [str(c).strip() for c in sheet.columns]
+        sheet = sheet.loc[:, ~pd.Index(sheet.columns).duplicated()]
         # 标准化字段名
         if '产品代码' not in sheet.columns:
-            sheet.rename(columns={sheet.columns[0]: '产品代码'}, inplace=True)
+            sheet = sheet.rename(columns={sheet.columns[0]: '产品代码'})
         if '最新单位净值' not in sheet.columns:
-            alt = [col for col in sheet.columns if '单位净值' in col]
+            alt = [col for col in sheet.columns if '单位净值' in str(col)]
             if alt:
-                sheet.rename(columns={alt[0]: '最新单位净值'}, inplace=True)
+                sheet = sheet.rename(columns={alt[0]: '最新单位净值'})
         if '汇总日期' in sheet.columns:
-            sheet.rename(columns={'汇总日期': '规模计算日期'}, inplace=True)
+            sheet = sheet.rename(columns={'汇总日期': '规模计算日期'})
         nv_dfs.append(sheet)
 
 df_nv_all = pd.concat(nv_dfs, ignore_index=True)
