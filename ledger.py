@@ -54,6 +54,10 @@ df_product = df_product.rename(columns={
     '最早实际结束日期': '到期日'
 })
 
+# 部分表格可能使用“理财产品名称”字段
+if '理财产品名称' in df_product.columns and '产品名称' not in df_product.columns:
+    df_product = df_product.rename(columns={'理财产品名称': '产品名称'})
+
 # 处理产品表中的日期格式
 for _col in ['募集开始日期', '募集结束日期', '成立日', '到期日']:
     if _col in df_product.columns:
@@ -81,12 +85,26 @@ for f in nv_files:
 
 df_nv_all = pd.concat(nv_dfs, ignore_index=True)
 
+# 去除测试产品（代码以 BMD 开头）
+if '产品代码' in df_nv_all.columns:
+    df_nv_all = df_nv_all[~df_nv_all['产品代码'].astype(str).str.startswith('BMD', na=False)]
+
 # 处理净值表中的日期格式
 if '规模计算日期' in df_nv_all.columns:
     df_nv_all['规模计算日期'] = parse_mixed_date(df_nv_all['规模计算日期'])
 
 # ========== 合并产品数据 ==========
-df_merged = pd.merge(df_nv_all, df_product, how='left', on='产品代码')
+df_merged_code = pd.merge(df_nv_all, df_product, how='left', on='产品代码')
+
+if '产品名称' in df_nv_all.columns and '产品名称' in df_product.columns:
+    df_merged_name = pd.merge(
+        df_nv_all, df_product, how='left', left_on='产品名称', right_on='产品名称', suffixes=('', '_name')
+    )
+    for col in df_product.columns:
+        if col in df_merged_code.columns and col in df_merged_name.columns:
+            df_merged_code[col] = df_merged_code[col].fillna(df_merged_name[col])
+
+df_merged = df_merged_code
 # 保留净值表字段，重命名为标准名称
 df_merged.rename(columns={
     '最新单位净值_x': '最新单位净值',
